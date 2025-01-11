@@ -1,4 +1,4 @@
-# Humanode Alert
+# Humanode Alert by Nodesemesta
 
 <p align="center">
   <img src="NodeSemesta.png" alt="Humanode Alert Logo" width="200">
