@@ -1,7 +1,7 @@
 # Humanode Alert
 
 <p align="center">
-  <img src="logo/NodeSemesta.png" alt="Humanode Alert Logo" width="200">
+  <img src="NodeSemesta.png" alt="Humanode Alert Logo" width="200">
 </p>
 
 ---
