@@ -1,6 +1,10 @@
 # Humanode Alert
 
-![Node Semesta](NodeSemesta.png)
+<p align="center">
+  <img src="logo/NodeSemesta.png" alt="Humanode Alert Logo" width="200">
+</p>
+
+---
 
 **Humanode Alert** adalah sistem yang memonitor status autentikasi node Humanode Anda dan mengirimkan notifikasi ke Telegram. Aplikasi ini menggunakan Python dan diatur menggunakan systemd untuk berjalan secara otomatis di latar belakang.
 
