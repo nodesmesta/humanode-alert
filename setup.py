@@ -5,7 +5,6 @@ import sys
 
 # Nama file konfigurasi dan service
 CONFIG_FILE = "config.json"
-NGROK_CONFIG_FILE = os.path.expanduser("~/.ngrok2/ngrok.yml")
 CHECKER_SCRIPT = os.path.join(os.environ.get("HOME", "/root"), "humanode-alert", "checker.py")
 SERVICE_FILE = "/etc/systemd/system/auth_checker.service"
 
@@ -26,20 +25,6 @@ def install_dependencies():
     except subprocess.CalledProcessError as e:
         print(f"Gagal menginstal pustaka Python: {e}")
 
-# Fungsi untuk memastikan ngrok terinstal
-def install_ngrok():
-    print("Memeriksa apakah ngrok terinstal...")
-    try:
-        subprocess.run(["ngrok", "version"], check=True, stdout=subprocess.DEVNULL)
-        print("Ngrok sudah terinstal.")
-    except FileNotFoundError:
-        print("Ngrok tidak ditemukan. Mengunduh dan menginstal...")
-        ngrok_url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz"
-        subprocess.run(["wget", ngrok_url, "-O", "ngrok.tgz"], check=True)
-        subprocess.run(["tar", "-xvzf", "ngrok.tgz", "-C", "/usr/local/bin"], check=True)
-        subprocess.run(["rm", "ngrok.tgz"], check=True)
-        print("Ngrok berhasil diinstal.")
-
 # Fungsi untuk membuat file konfigurasi
 def create_config():
     if os.path.exists(CONFIG_FILE):
@@ -50,35 +35,18 @@ def create_config():
     token = input("Masukkan token bot Telegram Anda: ").strip()
     chat_id = input("Masukkan chat ID grup atau pengguna Telegram Anda: ").strip()
     username = input("Masukkan username Telegram Anda (tanpa @): ").strip()
-    ngrok_token = input("Masukkan token ngrok Anda: ").strip()
 
     # Menyimpan konfigurasi
     config = {
         "telegram_token": token,
         "telegram_chat_id": chat_id,
-        "username": username,
-        "ngrok_token": ngrok_token
+        "username": username
     }
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=4)
 
     print("\nKonfigurasi berhasil dibuat!")
     print(f"File konfigurasi disimpan di: {os.path.abspath(CONFIG_FILE)}")
-
-# Fungsi untuk mengonfigurasi ngrok
-def configure_ngrok():
-    with open(CONFIG_FILE) as f:
-        config = json.load(f)
-
-    ngrok_token = config.get("ngrok_token")
-    if not ngrok_token:
-        print("Token ngrok tidak ditemukan di konfigurasi. Harap tambahkan token ngrok.")
-        return
-
-    os.makedirs(os.path.dirname(NGROK_CONFIG_FILE), exist_ok=True)
-    with open(NGROK_CONFIG_FILE, "w") as f:
-        f.write(f"authtoken: {ngrok_token}\n")
-    print("Ngrok berhasil dikonfigurasi.")
 
 # Fungsi untuk membuat service systemd
 def create_systemd_service():
@@ -111,13 +79,20 @@ WantedBy=multi-user.target
     except subprocess.CalledProcessError as e:
         print(f"Gagal membuat service systemd: {e}")
 
+# Fungsi untuk membersihkan file sementara di /tmp
+def clean_tmp_files():
+    tmp_files = ["/tmp/initial_notify_done"]
+    for file in tmp_files:
+        if os.path.exists(file):
+            os.remove(file)
+            print(f"File sementara {file} berhasil dihapus.")
+
 # Menjalankan proses instalasi
 if __name__ == "__main__":
-    print("=== Instalasi Aplikasi Auth Checker ===")
+    print("=== Instalasi Aplikasi Autentikasi Node ===")
+    clean_tmp_files()
     install_dependencies()
-    install_ngrok()
     create_config()
-    configure_ngrok()
     create_systemd_service()
     print("\nInstalasi selesai. Anda dapat memeriksa status service dengan perintah:")
     print("sudo systemctl status auth_checker.service")

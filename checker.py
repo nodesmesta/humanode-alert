@@ -11,17 +11,23 @@ HUMANODE_DIR = os.path.join(HOME_DIR, ".humanode/workspaces/default")
 HUMANODE_PEER = os.path.join(HUMANODE_DIR, "humanode-peer")
 CHAIN_SPEC = os.path.join(HUMANODE_DIR, "chainspec.json")
 
-# Endpoint untuk bioauth_status
+# Endpoint untuk bioauth_status dan renew
 url = "http://127.0.0.1:9933"
 headers = {"Content-Type": "application/json"}
-payload = {
+status_payload = {
     "jsonrpc": "2.0",
     "method": "bioauth_status",
     "params": [],
     "id": 1
 }
+renew_payload = {
+    "jsonrpc": "2.0",
+    "method": "bioauth_renew_session",
+    "params": [],
+    "id": 2
+}
 
-auth_url_command = f"{HUMANODE_PEER} bioauth auth-url --rpc-url-ngrok-detect --chain {CHAIN_SPEC}"
+auth_url_command = f"{HUMANODE_PEER} bioauth auth-url --chain {CHAIN_SPEC}"
 
 # Memuat konfigurasi dari file config.json
 CONFIG_FILE = "config.json"
@@ -38,6 +44,7 @@ telegram_api_url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
 last_status = None
 last_auth_url = None
 NOTIFY_FLAG = "/tmp/initial_notify_done"  # Penanda untuk notifikasi awal
+RENEW_FLAG = "/tmp/renew_attempted"       # Penanda untuk mencoba pembaruan
 
 # Fungsi untuk mendapatkan IP server
 def get_server_ip():
@@ -83,50 +90,19 @@ def send_telegram_message(message):
     except requests.exceptions.RequestException as e:
         print(f"Terjadi kesalahan saat mengirim notifikasi Telegram: {e}")
 
-# Fungsi untuk memeriksa validitas URL RPC
-def is_rpc_url_valid(rpc_url):
+# Fungsi untuk memperbarui sesi
+def renew_session():
     try:
-        response = requests.post(rpc_url, json={"jsonrpc": "2.0", "method": "rpc_methods", "params": [], "id": 1}, timeout=5)
-        if response.status_code == 200 and "result" in response.json():
-            return True
-        return False
-    except requests.exceptions.RequestException as e:
-        print(f"Kesalahan saat memeriksa URL RPC: {e}")
-        return False
-
-# Fungsi untuk merestart RPC tunnel
-def restart_rpc_tunnel():
-    print("Merestart RPC tunnel...")
-    try:
-        subprocess.run(["pkill", "-f", "ngrok"], check=False)
-        subprocess.Popen(["ngrok", "http", "9933"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(5)
-        print("RPC tunnel berhasil direstart.")
+        response = requests.post(url, json=renew_payload, headers=headers)
+        if response.status_code == 200:
+            response_data = response.json()
+            if response_data.get("result") == "Session renewed successfully":
+                print("Sesi berhasil diperbarui.")
+                return True
+        print("Gagal memperbarui sesi.")
     except Exception as e:
-        print(f"Gagal merestart RPC tunnel: {e}")
-
-# Fungsi untuk memeriksa dan merestart tunnel
-def check_and_restart_tunnel():
-    global last_auth_url
-    auth_url = get_auth_url()
-
-    if not is_rpc_url_valid(auth_url):
-        print("RPC URL tidak valid. Akan mencoba merestart tunnel RPC...")
-        restart_rpc_tunnel()
-        auth_url = get_auth_url()
-        if not is_rpc_url_valid(auth_url):
-            print("Gagal memperbaiki tunnel RPC setelah restart.")
-            send_telegram_message(f"❌ @{username}, gagal memperbaiki RPC tunnel setelah restart.")
-        else:
-            print("RPC tunnel berhasil diperbaiki.")
-            send_telegram_message(f"✅ @{username}, RPC tunnel berhasil diperbaiki. Link baru: <a href='{auth_url}'>{auth_url}</a>")
-
-    if auth_url != last_auth_url:
-        last_auth_url = auth_url
-        send_telegram_message(
-            f"🔄 @{username}, link autentikasi Anda telah berubah.\n"
-            f"Link baru: <a href='{auth_url}'>{auth_url}</a>"
-        )
+        print(f"Terjadi kesalahan saat memperbarui sesi: {e}")
+    return False
 
 # Fungsi untuk notifikasi awal bahwa Anda adalah validator
 def notify_initial_status():
@@ -138,7 +114,7 @@ def notify_initial_status():
     auth_url = get_auth_url()
 
     try:
-        response = requests.post(url, json=payload, headers=headers)
+        response = requests.post(url, json=status_payload, headers=headers)
         response_data = response.json()
 
         if "result" in response_data and "Active" in response_data["result"]:
@@ -186,7 +162,7 @@ def check_bioauth_status():
                 f"Link baru: <a href='{auth_url}'>{auth_url}</a>"
             )
         
-        response = requests.post(url, json=payload, headers=headers)
+        response = requests.post(url, json=status_payload, headers=headers)
 
         if response.status_code == 200:
             response_data = response.json()
@@ -210,25 +186,33 @@ def check_bioauth_status():
                             f"⚠️ @{username}, bioauth akan kedaluwarsa dalam <b>1 jam</b>.\n"
                             f"IP Address: <b>{server_ip}</b>\n"
                             f"Sisa waktu: <b>{formatted_remaining_time}</b>\n"
-                            f"Link autentikasi: <a href='{auth_url}'>{auth_url}</a>"
-                        )
-                        send_telegram_message(message)
-
-                    if 0 < remaining_seconds <= 600 and remaining_seconds % 300 == 0:
-                        message = (
-                            f"⚠️ @{username}, bioauth akan kedaluwarsa dalam <b>{remaining_seconds // 60} menit</b>.\n"
-                            f"IP Address: <b>{server_ip}</b>\n"
-                            f"Sisa waktu: <b>{formatted_remaining_time}</b>\n"
                             f"Link autentikasi: <a href='{auth_url}'>Klik di sini</a>"
                         )
                         send_telegram_message(message)
 
+                    if 0 < remaining_seconds <= 600 and remaining_seconds % 300 == 0:
+                        if remaining_seconds <= 300 and not renew_session():
+                            message = (
+                                f"❌ @{username}, gagal memperbarui sesi.\n"
+                                f"IP Address: <b>{server_ip}</b>\n"
+                                f"Sisa waktu: <b>{formatted_remaining_time}</b>\n"
+                                f"Link autentikasi: <a href='{auth_url}'>Klik di sini</a>"
+                            )
+                        else:
+                            message = (
+                                f"⚠️ @{username}, bioauth akan kedaluwarsa dalam <b>{remaining_seconds // 60} menit</b>.\n"
+                                f"IP Address: <b>{server_ip}</b>\n"
+                                f"Sisa waktu: <b>{formatted_remaining_time}</b>\n"
+                                f"Link autentikasi: <a href='{auth_url}'>Klik di sini</a>"
+                            )
+                        send_telegram_message(message)
+
                 if remaining_seconds <= 0:
-                    if abs(remaining_seconds) % 300 == 0:
+                    if not renew_session():
                         message = (
-                            f"❌ @{username}, bioauth telah kedaluwarsa.\n"
+                            f"❌ @{username}, bioauth telah kedaluwarsa dan gagal diperbarui.\n"
                             f"IP Address: <b>{server_ip}</b>\n"
-                            f"Link autentikasi: <a href='{auth_url}'>{auth_url}</a>"
+                            f"Link autentikasi: <a href='{auth_url}'>Klik di sini</a>"
                         )
                         send_telegram_message(message)
         else:
@@ -236,10 +220,8 @@ def check_bioauth_status():
     except Exception as e:
         print(f"Kesalahan: {e}")
 
-# Main loop
 if __name__ == "__main__":
     notify_initial_status()
     while True:
-        check_and_restart_tunnel()  # Periksa dan restart RPC tunnel jika perlu
-        check_bioauth_status()  # Periksa status bioauth
+        check_bioauth_status()
         time.sleep(60)
