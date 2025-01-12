@@ -83,6 +83,51 @@ def send_telegram_message(message):
     except requests.exceptions.RequestException as e:
         print(f"Terjadi kesalahan saat mengirim notifikasi Telegram: {e}")
 
+# Fungsi untuk memeriksa validitas URL RPC
+def is_rpc_url_valid(rpc_url):
+    try:
+        response = requests.post(rpc_url, json={"jsonrpc": "2.0", "method": "rpc_methods", "params": [], "id": 1}, timeout=5)
+        if response.status_code == 200 and "result" in response.json():
+            return True
+        return False
+    except requests.exceptions.RequestException as e:
+        print(f"Kesalahan saat memeriksa URL RPC: {e}")
+        return False
+
+# Fungsi untuk merestart RPC tunnel
+def restart_rpc_tunnel():
+    print("Merestart RPC tunnel...")
+    try:
+        subprocess.run(["pkill", "-f", "ngrok"], check=False)
+        subprocess.Popen(["ngrok", "http", "9933"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(5)
+        print("RPC tunnel berhasil direstart.")
+    except Exception as e:
+        print(f"Gagal merestart RPC tunnel: {e}")
+
+# Fungsi untuk memeriksa dan merestart tunnel
+def check_and_restart_tunnel():
+    global last_auth_url
+    auth_url = get_auth_url()
+
+    if not is_rpc_url_valid(auth_url):
+        print("RPC URL tidak valid. Akan mencoba merestart tunnel RPC...")
+        restart_rpc_tunnel()
+        auth_url = get_auth_url()
+        if not is_rpc_url_valid(auth_url):
+            print("Gagal memperbaiki tunnel RPC setelah restart.")
+            send_telegram_message(f"❌ @{username}, gagal memperbaiki RPC tunnel setelah restart.")
+        else:
+            print("RPC tunnel berhasil diperbaiki.")
+            send_telegram_message(f"✅ @{username}, RPC tunnel berhasil diperbaiki. Link baru: <a href='{auth_url}'>{auth_url}</a>")
+
+    if auth_url != last_auth_url:
+        last_auth_url = auth_url
+        send_telegram_message(
+            f"🔄 @{username}, link autentikasi Anda telah berubah.\n"
+            f"Link baru: <a href='{auth_url}'>{auth_url}</a>"
+        )
+
 # Fungsi untuk notifikasi awal bahwa Anda adalah validator
 def notify_initial_status():
     if os.path.exists(NOTIFY_FLAG):
@@ -165,7 +210,7 @@ def check_bioauth_status():
                             f"⚠️ @{username}, bioauth akan kedaluwarsa dalam <b>1 jam</b>.\n"
                             f"IP Address: <b>{server_ip}</b>\n"
                             f"Sisa waktu: <b>{formatted_remaining_time}</b>\n"
-                            f"Link autentikasi: <a href='{auth_url}'>Klik di sini</a>"
+                            f"Link autentikasi: <a href='{auth_url}'>{auth_url}</a>"
                         )
                         send_telegram_message(message)
 
@@ -183,7 +228,7 @@ def check_bioauth_status():
                         message = (
                             f"❌ @{username}, bioauth telah kedaluwarsa.\n"
                             f"IP Address: <b>{server_ip}</b>\n"
-                            f"Link autentikasi: <a href='{auth_url}'>Klik di sini</a>"
+                            f"Link autentikasi: <a href='{auth_url}'>{auth_url}</a>"
                         )
                         send_telegram_message(message)
         else:
@@ -191,8 +236,10 @@ def check_bioauth_status():
     except Exception as e:
         print(f"Kesalahan: {e}")
 
+# Main loop
 if __name__ == "__main__":
     notify_initial_status()
     while True:
-        check_bioauth_status()
+        check_and_restart_tunnel()  # Periksa dan restart RPC tunnel jika perlu
+        check_bioauth_status()  # Periksa status bioauth
         time.sleep(60)
