@@ -25,10 +25,10 @@ Ikuti langkah-langkah berikut untuk menginstal Humanode Alert:
 ### 1. Clone Repositori
 ```bash
 # Clone repositori ini
-$ git clone https://github.com/nodesmesta/humanode-alert.git
+git clone https://github.com/nodesmesta/humanode-alert.git
 
 # Masuk ke direktori project
-$ cd humanode-alert
+cd humanode-alert
 ```
 
 ### 2. Jalankan Setup
@@ -38,7 +38,7 @@ Setup script akan:
 - Membuat dan mengaktifkan service systemd.
 
 ```bash
-$ python3 setup.py
+python3 setup.py
 ```
 
 ### 3. Konfigurasi Telegram
@@ -52,7 +52,7 @@ File konfigurasi akan disimpan sebagai `config.json` di direktori project.
 ### 4. Periksa Status Service
 Pastikan service berjalan dengan benar:
 ```bash
-$ sudo systemctl status auth_checker.service
+sudo systemctl status auth_checker.service
 ```
 
 Jika service berjalan, Anda akan melihat output seperti:
