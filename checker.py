@@ -44,7 +44,6 @@ telegram_api_url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
 last_status = None
 last_auth_url = None
 NOTIFY_FLAG = "/tmp/initial_notify_done"  # Penanda untuk notifikasi awal
-RENEW_FLAG = "/tmp/renew_attempted"       # Penanda untuk mencoba pembaruan
 
 # Fungsi untuk mendapatkan IP server
 def get_server_ip():
@@ -90,6 +89,24 @@ def send_telegram_message(message):
     except requests.exceptions.RequestException as e:
         print(f"Terjadi kesalahan saat mengirim notifikasi Telegram: {e}")
 
+# Fungsi untuk memulai ulang RPC tunnel
+def restart_rpc_tunnel():
+    try:
+        subprocess.run(["systemctl", "restart", "humanode-rpc"], check=True)
+        print("RPC tunnel berhasil dimulai ulang.")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Gagal memulai ulang RPC tunnel: {e}")
+        return False
+
+# Fungsi untuk memeriksa apakah RPC aktif
+def is_rpc_active():
+    try:
+        response = requests.get(url, timeout=5)  # Cek endpoint RPC
+        return response.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
+
 # Fungsi untuk memperbarui sesi
 def renew_session():
     try:
@@ -117,6 +134,7 @@ def notify_initial_status():
         response = requests.post(url, json=status_payload, headers=headers)
         response_data = response.json()
 
+        formatted_remaining_time = "Tidak tersedia"
         if "result" in response_data and "Active" in response_data["result"]:
             expires_at = response_data["result"]["Active"]["expires_at"]
             expires_at_seconds = expires_at / 1000
@@ -125,8 +143,6 @@ def notify_initial_status():
             hours, remainder = divmod(remaining_seconds, 3600)
             minutes, seconds = divmod(remainder, 60)
             formatted_remaining_time = f"{hours}:{minutes:02}:{seconds:02}"
-        else:
-            formatted_remaining_time = "Tidak tersedia"
 
         message = (
             f"✅ @{username} Anda adalah validator!\n"
@@ -154,14 +170,14 @@ def check_bioauth_status():
     try:
         server_ip = get_server_ip()
         auth_url = get_auth_url()
-        
+
         if auth_url != last_auth_url:
             last_auth_url = auth_url
             send_telegram_message(
                 f"🔄 @{username}, link autentikasi Anda telah berubah.\n"
                 f"Link baru: <a href='{auth_url}'>{auth_url}</a>"
             )
-        
+
         response = requests.post(url, json=status_payload, headers=headers)
 
         if response.status_code == 200:
@@ -223,5 +239,21 @@ def check_bioauth_status():
 if __name__ == "__main__":
     notify_initial_status()
     while True:
+        if not is_rpc_active():
+            send_telegram_message(f"❌ @{username}, RPC tunnel mati. Mencoba untuk memulai ulang...")
+
+            if restart_rpc_tunnel():
+                send_telegram_message(f"✅ @{username}, RPC tunnel berhasil dimulai ulang. Mendapatkan link autentikasi baru...")
+                new_auth_url = get_auth_url()
+                send_telegram_message(
+                    f"🔄 @{username}, link autentikasi baru Anda:\n"
+                    f"<a href='{new_auth_url}'>{new_auth_url}</a>"
+                )
+            else:
+                send_telegram_message(f"❌ @{username}, gagal memulai ulang RPC tunnel. Harap periksa secara manual.")
+
+            time.sleep(60)
+            continue
+
         check_bioauth_status()
         time.sleep(60)
